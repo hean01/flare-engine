@@ -26,6 +26,7 @@ FLARE.  If not, see http://www.gnu.org/licenses/
 #include <SDL.h>
 #include <SDL_image.h>
 #include <SDL_mixer.h>
+#include <SDL_opengl.h>
 
 using namespace std;
 
@@ -77,7 +78,7 @@ static void init() {
 	SDL_WM_SetIcon(titlebar_icon, NULL);
 
 	// Create window
-	Uint32 flags = 0;
+	Uint32 flags = SDL_OPENGL;
 
 	if (FULLSCREEN) flags = flags | SDL_FULLSCREEN;
 	if (DOUBLEBUF) flags = flags | SDL_DOUBLEBUF;
@@ -86,14 +87,29 @@ static void init() {
 	else
 		flags = flags | SDL_SWSURFACE;
 
-	screen = SDL_SetVideoMode (VIEW_W, VIEW_H, 0, flags);
+	SDL_Surface *_screen = SDL_SetVideoMode (VIEW_W, VIEW_H, 0, flags);
+
+Uint32 rmask, gmask, bmask, amask;
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+    rmask = 0xff000000;
+    gmask = 0x00ff0000;
+    bmask = 0x0000ff00;
+    amask = 0x000000ff;
+#else
+    rmask = 0x000000ff;
+    gmask = 0x0000ff00;
+    bmask = 0x00ff0000;
+    amask = 0xff000000;
+#endif
+screen = SDL_CreateRGBSurface(SDL_SWSURFACE, _screen->w, _screen->h, 24, rmask, gmask, bmask, amask);
+
 	if (screen == NULL) {
 
 		fprintf (stderr, "Error during SDL_SetVideoMode: %s\n", SDL_GetError());
 		SDL_Quit();
 		exit(1);
 	}
-
+	
 	// Set Gamma
 	if (CHANGE_GAMMA)
 		SDL_SetGamma(GAMMA,GAMMA,GAMMA);
@@ -142,6 +158,36 @@ static void mainLoop (bool debug_event) {
 	int prevTicks = SDL_GetTicks();
 	int nowTicks;
 
+// setup opengl viewport
+	//SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+	glEnable(GL_TEXTURE_2D);
+	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	glViewport(0,0,VIEW_W, VIEW_H);
+	glClear(GL_COLOR_BUFFER_BIT);
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(0.0f, VIEW_W, VIEW_H, 0.0f, -1.0f, 1.0f);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+
+
+	// create a gl texture
+	GLuint t, q;
+	glGenTextures(1, &t);
+	glBindTexture(GL_TEXTURE_2D, t);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	q = glGenLists(1);
+	glNewList(q, GL_COMPILE);
+	glBegin(GL_QUADS);
+	glTexCoord2i(0,0); glVertex3f(0, 0, 0);
+	glTexCoord2i(1,0); glVertex3f(VIEW_W, 0, 0);
+	glTexCoord2i(1,1); glVertex3f(VIEW_W, VIEW_H, 0);
+	glTexCoord2i(0,1); glVertex3f(0, VIEW_H, 0);
+	glEnd();
+	glEndList();
+
 	while ( !done ) {
 
 		SDL_PumpEvents();
@@ -157,13 +203,27 @@ static void mainLoop (bool debug_event) {
 		// Input done means the user closes the window.
 		done = gswitch->done || inpt->done;
 
+		
 		nowTicks = SDL_GetTicks();
 		if (nowTicks - prevTicks < delay) SDL_Delay(delay - (nowTicks - prevTicks));
 		gswitch->showFPS(1000 / (SDL_GetTicks() - prevTicks));
 		prevTicks = SDL_GetTicks();
 
-		SDL_Flip(screen);
+		// update texture from rendered offscreen surface
+		glTexImage2D(GL_TEXTURE_2D, 0, 3, 
+			     screen->w, screen->h, 0,
+			     GL_RGB, 
+			     GL_UNSIGNED_BYTE, screen->pixels);
+
+		// render textured quad	
+		glCallList(q);
+
+		SDL_GL_SwapBuffers();
+
+		//SDL_Flip(screen);
 	}
+	glDeleteLists(q, 1);
+	glDeleteTextures(1, &t);
 }
 
 static void cleanup() {

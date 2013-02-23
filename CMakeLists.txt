@@ -12,6 +12,8 @@ if (NOT MSVC)
   set(CMAKE_LD_FLAGS "-fwhole-program")
 endif (NOT MSVC)
 
+set(CMAKE_LD_FLAGS "${CMAKE_LD_FLAGS} -lGL")
+
 if (CMAKE_CXX_COMPILER MATCHES "clang")
   # clang needs lstdc++ linked explicitly:
   set(CMAKE_LD_FLAGS "${CMAKE_LD_FLAGS} -lstdc++")
