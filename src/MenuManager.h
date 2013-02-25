@@ -1,5 +1,6 @@
 /*
 Copyright © 2011-2012 Clint Bellanger
+Copyright © 2013 Henrik Andersson
 
 This file is part of FLARE.
 
@@ -69,7 +70,6 @@ private:
 	TooltipData tip_buf;
 
 	bool key_lock;
-	void loadSounds();
 	void loadIcons();
 
 	bool dragging;
@@ -86,9 +86,9 @@ public:
 	void logic();
 	void render();
 	void renderIcon(int icon_id, int x, int y);
-	void closeAll(bool play_sound);
-	void closeLeft(bool play_sound);
-	void closeRight(bool play_sound);
+	void closeAll();
+	void closeLeft();
+	void closeRight();
 
 	std::vector<Menu*> menus;
 	ItemManager *items;
@@ -113,9 +113,6 @@ public:
 	bool pause;
 	bool menus_open;
 	ItemStack drop_stack;
-
-	Mix_Chunk *sfx_open;
-	Mix_Chunk *sfx_close;
 
 	bool requestingExit() { return done; }
 };

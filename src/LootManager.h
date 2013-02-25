@@ -1,6 +1,7 @@
 /*
 Copyright © 2011-2012 Clint Bellanger
 Copyright © 2012 Stefan Beller
+Copyright © 2013 Henrik Andersson
 
 This file is part of FLARE.
 
@@ -74,9 +75,9 @@ private:
 
 	// functions
 	void loadGraphics();
-	int lootLevel(int base_level);
 
-	Mix_Chunk *loot_flip;
+	SoundManager::SoundID sfx_currency;
+	SoundManager::SoundID sfx_loot;
 
 	// loot refers to ItemManager indices
 	std::vector<Loot> loot;
@@ -86,7 +87,7 @@ private:
 	std::vector<CurrencyRange> currency_range;
 
 	// enemies which should drop loot, but didnt yet.
-	std::vector<const Enemy*> enemiesDroppingLoot;
+	std::vector<const class Enemy*> enemiesDroppingLoot;
 
 public:
 	static LootManager *getInstance();
@@ -99,6 +100,8 @@ public:
 	void renderTooltips(Point cam);
 	void checkEnemiesForLoot();
 
+	void playCurrencySound();
+
 	// called by enemy, who definitly wants to drop loot.
 	void addEnemyLoot(const Enemy *e);
 	void checkMapForLoot();
@@ -107,6 +110,7 @@ public:
 	void addCurrency(int count, Point pos);
 	ItemStack checkPickup(Point mouse, Point cam, Point hero_pos, int &currency, MenuInventory *inv);
 	ItemStack checkAutoPickup(Point hero_pos, int &currency);
+	ItemStack checkNearestPickup(Point hero_pos, int &currency, MenuInventory *inv);
 
 	void addRenders(std::vector<Renderable> &ren, std::vector<Renderable> &ren_dead);
 

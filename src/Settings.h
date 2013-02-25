@@ -68,6 +68,7 @@ typedef struct HeroClass{
 extern std::string PATH_CONF; // user-configurable settings files
 extern std::string PATH_USER; // important per-user data (saves)
 extern std::string PATH_DATA; // common game data
+extern std::string USER_PATH_DATA; // user-defined replacement for PATH_DATA
 
 // Filenames
 extern std::string FILE_SETTINGS;     // Name of the settings file (e.g. "settings.txt").
@@ -110,7 +111,6 @@ extern bool COMBAT_TEXT;
 
 // Engine Settings
 extern bool MENUS_PAUSE;
-extern std::string DEFAULT_NAME;
 extern bool SAVE_HPMP;
 extern bool ENABLE_PLAYGAME;
 extern bool SHOW_FPS;
@@ -118,6 +118,7 @@ extern int CORPSE_TIMEOUT;
 extern bool SELL_WITHOUT_VENDOR;
 extern int AIM_ASSIST;
 extern std::string WINDOW_TITLE;
+extern std::string GAME_PREFIX;
 
 // Tile Settings
 extern unsigned short UNITS_PER_TILE;

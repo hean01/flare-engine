@@ -1,6 +1,7 @@
 /*
 Copyright © 2011-2012 Clint Bellanger
 Copyright © 2012 Stefan Beller
+Copyright © 2013 Henrik Andersson
 
 This file is part of FLARE.
 
@@ -36,6 +37,7 @@ FLARE.  If not, see http://www.gnu.org/licenses/
 
 #include <sstream>
 #include <iostream>
+#include <limits>
 
 using namespace std;
 
@@ -85,18 +87,19 @@ LootManager::LootManager(ItemManager *_items, MapRenderer *_map, StatBlock *_her
 				cr.low = eatFirstInt(infile.val, ',');
 				cr.high = eatFirstInt(infile.val, ',');
 				currency_range.push_back(cr);
+			} else if (infile.key == "sfx_loot") {
+				sfx_loot =  snd->load(eatFirstString(infile.val, ','), "LootManager dropping loot");
+			} else if (infile.key == "sfx_currency") {
+				sfx_currency =  snd->load(eatFirstString(infile.val, ','), "LootManager currency");
 			}
 		}
 		infile.close();
 	} else fprintf(stderr, "Unable to open engine/loot.txt!\n");
 
-	loot_flip = NULL;
-
 	// reset current map loot
 	loot.clear();
 
 	loadGraphics();
-	loot_flip = loadSfx("soundfx/flying_loot.ogg", "LootManager dropping loot");
 
 	full_msg = false;
 
@@ -144,7 +147,7 @@ void LootManager::logic() {
 			if (it->stack.item > 0)
 				items->playSound(it->stack.item);
 			else
-				items->playCoinsSound();
+				playCurrencySound();
 		}
 	}
 
@@ -245,31 +248,6 @@ void LootManager::checkMapForLoot() {
 }
 
 /**
- * Monsters don't just drop loot equal to their level
- * The loot level spread is a bell curve
- */
-int LootManager::lootLevel(int base_level) {
-
-	int x = rand() % 100;
-	int actual;
-
-	// this loot bell curve is +/- 3 levels
-	// percents: 5,10,20,30,20,10,5
-	if (x <= 4) actual = base_level-3;
-	else if (x <= 14) actual = base_level-2;
-	else if (x <= 34) actual = base_level-1;
-	else if (x <= 64) actual = base_level;
-	else if (x <= 84) actual = base_level+1;
-	else if (x <= 94) actual = base_level+2;
-	else actual = base_level+3;
-
-	if (actual < 1) actual = 0;
-	if (actual > 20) actual = base_level;
-
-	return actual;
-}
-
-/**
  * This function is called when there definitely is a piece of loot dropping
  * calls addLoot()
  */
@@ -306,7 +284,7 @@ void LootManager::determineLootByEnemy(const Enemy *e, Point pos) {
 		if (new_loot.item == 0) {
 			int level = e->stats.level;
 			if (level == 0) level = 1; // avoid div/0 if enemy level is not specified
-			
+
 			// TODO: move gold drop amounts to engine/loot.txt
 			int currency = rand() % (level * 2) + level;
 			currency = (currency * (100 + hero->effects.bonus_currency)) / 100;
@@ -329,7 +307,7 @@ void LootManager::addLoot(ItemStack stack, Point pos) {
 	ld.loadAnimation(animationname);
 	ld.currency = 0;
 	loot.push_back(ld);
-	playSfx(loot_flip);
+	snd->play(sfx_loot);
 }
 
 void LootManager::addCurrency(int count, Point pos) {
@@ -352,7 +330,7 @@ void LootManager::addCurrency(int count, Point pos) {
 
 	ld.currency = count;
 	loot.push_back(ld);
-	playSfx(loot_flip);
+	snd->play(sfx_loot);
 }
 
 /**
@@ -433,6 +411,47 @@ ItemStack LootManager::checkAutoPickup(Point hero_pos, int &currency) {
 	return loot_stack;
 }
 
+ItemStack LootManager::checkNearestPickup(Point hero_pos, int &currency, MenuInventory *inv) {
+	ItemStack loot_stack;
+	currency = 0;
+	loot_stack.item = 0;
+	loot_stack.quantity = 0;
+
+	int best_distance = std::numeric_limits<int>::max();
+
+	vector<Loot>::iterator it;
+	vector<Loot>::iterator nearest;
+
+	for (it = loot.end(); it != loot.begin(); ) {
+		--it;
+
+		int distance = (int)calcDist(hero_pos,it->pos);
+		if (distance < LOOT_RANGE && distance < best_distance) {
+			best_distance = distance;
+			nearest = it;
+		}
+	}
+
+	if (&(*nearest) != NULL) {
+		if (nearest->stack.item > 0 && !(inv->full(nearest->stack.item))) {
+			loot_stack = nearest->stack;
+			loot.erase(nearest);
+			return loot_stack;
+		}
+		else if (nearest->stack.item > 0) {
+			full_msg = true;
+		}
+		else if (nearest->currency > 0) {
+			currency = nearest->currency;
+			loot.erase(nearest);
+
+			return loot_stack;
+		}
+	}
+
+	return loot_stack;
+}
+
 void LootManager::addRenders(vector<Renderable> &ren, vector<Renderable> &ren_dead) {
 	vector<Loot>::iterator it;
 	for (it = loot.begin(); it != loot.end(); ++it) {
@@ -442,6 +461,10 @@ void LootManager::addRenders(vector<Renderable> &ren, vector<Renderable> &ren_de
 
 		(it->animation->isLastFrame() ? ren_dead : ren).push_back(r);
 	}
+}
+
+void LootManager::playCurrencySound() {
+	snd->play(sfx_currency);
 }
 
 LootManager::~LootManager() {
@@ -464,7 +487,8 @@ LootManager::~LootManager() {
 
 	anim->cleanUp();
 
-	Mix_FreeChunk(loot_flip);
+	snd->unload(sfx_loot);
+	snd->unload(sfx_currency);
 
 	lootManager = 0;
 	delete tip;

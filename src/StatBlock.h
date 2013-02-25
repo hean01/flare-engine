@@ -212,6 +212,7 @@ public:
 	bool wielding_mental;
 	bool wielding_offense;
 	std::vector<int> vulnerable;
+	std::vector<int> vulnerable_base;
 
 	// buff and debuff stats
 	int transform_duration;

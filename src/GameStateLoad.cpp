@@ -117,22 +117,33 @@ GameStateLoad::GameStateLoad() : GameState() {
 
 	// Load the MenuConfirm positions and alignments from menus/menus.txt
 	if (infile.open(mods->locate("menus/menus.txt"))) {
+		int menu_index = -1;
 		while (infile.next()) {
-			infile.val = infile.val + ',';
+			if (infile.key == "id") {
+				if (infile.val == "confirm") menu_index = 0;
+				else menu_index = -1;
+			}
 
-			if (infile.key == "confirm") {
+			if (menu_index == -1)
+				continue;
+
+			if (infile.key == "layout") {
+				infile.val = infile.val + ',';
 				confirm->window_area.x = eatFirstInt(infile.val, ',');
 				confirm->window_area.y = eatFirstInt(infile.val, ',');
 				confirm->window_area.w = eatFirstInt(infile.val, ',');
 				confirm->window_area.h = eatFirstInt(infile.val, ',');
-				confirm->alignment = eatFirstString(infile.val, ',');
-				confirm->align();
-				confirm->update();
-				break;
+			}
+
+			if (infile.key == "align") {
+				confirm->alignment = infile.val;
 			}
 		}
 		infile.close();
 	} else fprintf(stderr, "Unable to open menus/menus.txt!\n");
+
+	confirm->align();
+	confirm->update();
 
 	// get displayable types list
 	bool found_layer = false;
@@ -267,9 +278,12 @@ void GameStateLoad::readGameSlot(int slot) {
 	if (slot < 0 || slot >= GAME_SLOT_MAX) return;
 
 	// save slots are named save#.txt
+	filename << PATH_USER;
+	if (GAME_PREFIX.length() > 0)
+	  filename << GAME_PREFIX << "_";
 	filename << "save" << (slot+1) << ".txt";
 
-	if (!infile.open(PATH_USER + filename.str())) return;
+	if (!infile.open(filename.str())) return;
 
 	while (infile.next()) {
 
@@ -380,18 +394,7 @@ void GameStateLoad::logic() {
 		current_frame = (63 - frame_ticker) / 8;
 
 	if (!confirm->visible) {
-		if (inpt->pressing[CANCEL] && !inpt->lock[CANCEL] && selected_slot >= 0) {
-			inpt->lock[CANCEL] = true;
-			selected_slot = -1;
-			loadPortrait(selected_slot);
-			button_action->label = msg->get("New Game");
-			button_action->enabled = false;
-			button_alternate->enabled = false;
-			button_action->refresh();
-			button_alternate->refresh();
-		}
-		if (button_exit->checkClick() || (inpt->pressing[CANCEL] && !inpt->lock[CANCEL])) {
-			inpt->lock[CANCEL] = true;
+		if (button_exit->checkClick()) {
 			delete requestedGameState;
 			requestedGameState = new GameStateTitle();
 		}
@@ -402,8 +405,7 @@ void GameStateLoad::logic() {
 			logicLoading();
 		}
 
-		if (button_action->checkClick() || (inpt->pressing[ACCEPT] && !inpt->lock[ACCEPT] && button_action->enabled)) {
-			inpt->lock[ACCEPT] = true;
+		if (button_action->checkClick()) {
 			if (stats[selected_slot].name == "") {
 				// create a new game
 				GameStateNew* newgame = new GameStateNew();
@@ -414,8 +416,7 @@ void GameStateLoad::logic() {
 				loading_requested = true;
 			}
 		}
-		if (button_alternate->checkClick() || (inpt->pressing[DEL] && !inpt->lock[DEL] && button_alternate->enabled)) {
-			inpt->lock[DEL] = true;
+		if (button_alternate->checkClick()) {
 			// Display pop-up to make sure save should be deleted
 			confirm->visible = true;
 			confirm->render();
@@ -429,19 +430,6 @@ void GameStateLoad::logic() {
 					updateButtons();
 				}
 			}
-		}
-		// check arrow keys
-		if (inpt->pressing[DOWN] && !inpt->lock[DOWN] && !inpt->lock[MAIN1]) {
-			inpt->lock[DOWN] = true;
-			selected_slot += 1;
-			if (selected_slot > GAME_SLOT_MAX-1) selected_slot = GAME_SLOT_MAX-1;
-			updateButtons();
-		}
-		if (inpt->pressing[UP] && !inpt->lock[UP] && !inpt->lock[MAIN1]) {
-			inpt->lock[UP] = true;
-			selected_slot -= 1;
-			if (selected_slot < 0) selected_slot = 0;
-			updateButtons();
 		}
 	} else if (confirm->visible) {
 		confirm->logic();

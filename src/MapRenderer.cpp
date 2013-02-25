@@ -1,6 +1,7 @@
 /*
 Copyright © 2011-2012 Clint Bellanger
 Copyright © 2012 Stefan Beller
+Copyright © 2013 Henrik Andersson
 
 This file is part of FLARE.
 
@@ -30,6 +31,7 @@ FLARE.  If not, see http://www.gnu.org/licenses/
 #include <stdint.h>
 
 #include <iostream>
+#include <limits>
 using namespace std;
 
 const int CLICK_RANGE = 3 * UNITS_PER_TILE; //for activating events
@@ -39,8 +41,7 @@ MapRenderer::MapRenderer(CampaignManager *_camp)
  , tip(new WidgetTooltip())
  , tip_pos(Point())
  , show_tooltip(false)
- , sfx(NULL)
- , sfx_filename("")
+ , sfx(0)
  , events(vector<Map_Event>())
  , background(NULL)
  , fringe(NULL)
@@ -77,13 +78,16 @@ void MapRenderer::clearEvents() {
 }
 
 void MapRenderer::playSFX(string filename) {
-	// only load from file if the requested soundfx isn't already loaded
-	if (filename != sfx_filename) {
-		Mix_FreeChunk(sfx);
-		sfx = loadSfx(filename, "MapRenderer background music");
-		sfx_filename = filename;
-	}
-	playSfx(sfx);
+	SoundManager::SoundID sid = sfx;
+
+	sid = snd->load(filename, "MapRenderer background music");
+
+	if (sid != sfx)
+		snd->unload(sfx);
+
+	sfx = sid;
+
+	snd->play(sfx);
 }
 
 void MapRenderer::push_enemy_group(Map_Group g) {
@@ -678,8 +682,9 @@ void MapRenderer::render(vector<Renderable> &r, vector<Renderable> &r_dead) {
 
 void MapRenderer::createBackgroundSurface() {
 	SDL_FreeSurface(backgroundsurface);
-	backgroundsurface = createSurface(VIEW_W + 2 * TILE_W * tset.max_size_x,
-			VIEW_H + 2 * TILE_H * tset.max_size_y);
+	backgroundsurface = createSurface(
+			VIEW_W + 2 * movedistance_to_rerender * TILE_W * tset.max_size_x,
+			VIEW_H + 2 * movedistance_to_rerender * TILE_H * tset.max_size_y);
 	// background has no alpha:
 	SDL_SetColorKey(backgroundsurface, 0, 0);
 }
@@ -1093,6 +1098,41 @@ void MapRenderer::checkHotspots() {
 	}
 }
 
+void MapRenderer::checkNearestEvent(Point loc) {
+	if (inpt->pressing[ACCEPT] && !inpt->lock[ACCEPT]) {
+		if (inpt->pressing[ACCEPT]) inpt->lock[ACCEPT] = true;
+
+		vector<Map_Event>::iterator it;
+		vector<Map_Event>::iterator nearest;
+		int best_distance = std::numeric_limits<int>::max();
+
+		// loop in reverse because we may erase elements
+		for (it = events.end(); it != events.begin(); ) {
+			--it;
+
+			// skip inactive events
+			if (!isActive(*it)) continue;
+
+			// skip events without hotspots
+			if ((*it).hotspot.h == 0) continue;
+
+			// skip events on cooldown
+			if ((*it).cooldown_ticks != 0) continue;
+
+			Point ev_loc;
+			ev_loc.x = (*it).location.x * UNITS_PER_TILE;
+			ev_loc.y = (*it).location.y * UNITS_PER_TILE;
+			int distance = (int)calcDist(loc,ev_loc);
+			if (distance < CLICK_RANGE && distance < best_distance) {
+				best_distance = distance;
+				nearest = it;
+			}
+		}
+		if (executeEvent(*nearest))
+			events.erase(nearest);
+	}
+}
+
 bool MapRenderer::isActive(const Map_Event &e){
 	for (unsigned i=0; i < e.components.size(); i++) {
 		if (e.components[i].type == "requires_not") {
@@ -1137,6 +1177,7 @@ void MapRenderer::checkTooltip() {
  * @return Returns true if the event shall not be run again.
  */
 bool MapRenderer::executeEvent(Map_Event &ev) {
+	if(&ev == NULL) return false;
 
 	// skip executing events that are on cooldown
 	if (ev.cooldown_ticks > 0) return false;
@@ -1282,9 +1323,8 @@ MapRenderer::~MapRenderer() {
 		Mix_HaltMusic();
 		Mix_FreeMusic(music);
 	}
-	Mix_FreeChunk(sfx);
+	snd->unload(sfx);
 
-	SDL_FreeSurface(backgroundsurface);
 	tip_buf.clear();
 	clearLayers();
 	clearEvents();

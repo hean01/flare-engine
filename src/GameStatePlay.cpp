@@ -1,7 +1,7 @@
 /*
 Copyright 2011-2012 Clint Bellanger
 Copyright 2012 Igor Paliychuk
-Copyright 2012 Henrik Andersson
+Copyright 2012-2013 Henrik Andersson
 Copyright 2012 Stefan Beller
 
 This file is part of FLARE.
@@ -207,6 +207,28 @@ void GameStatePlay::checkLoot() {
 		}
 		if (loot->full_msg) {
 			inpt->lock[MAIN1] = true;
+			menu->log->add(msg->get("Inventory is full."), LOG_TYPE_MESSAGES);
+			menu->hudlog->add(msg->get("Inventory is full."));
+			loot->full_msg = false;
+		}
+	}
+
+	// Pickup with ACCEPT key/button
+	if ((inpt->pressing[ACCEPT] && !inpt->lock[ACCEPT]) && pc->stats.alive) {
+
+		pickup = loot->checkNearestPickup(pc->stats.pos, currency, menu->inv);
+		if (pickup.item > 0) {
+			if (inpt->pressing[ACCEPT]) inpt->lock[ACCEPT] = true;
+			menu->inv->add(pickup);
+
+			camp->setStatus(menu->items->items[pickup.item].pickup_status);
+		}
+		else if (currency > 0) {
+			if (inpt->pressing[ACCEPT]) inpt->lock[ACCEPT] = true;
+			menu->inv->addCurrency(currency);
+		}
+		if (loot->full_msg) {
+			if (inpt->pressing[ACCEPT]) inpt->lock[ACCEPT] = true;
 			menu->log->add(msg->get("Inventory is full."), LOG_TYPE_MESSAGES);
 			menu->hudlog->add(msg->get("Inventory is full."));
 			loot->full_msg = false;
@@ -528,6 +550,11 @@ void GameStatePlay::checkNPCInteraction() {
 		npc_click = npcs->checkNPCClick(inpt->mouse, map->cam);
 		if (npc_click != -1) npc_id = npc_click;
 	}
+	// if we press the ACCEPT key, find the nearest NPC to interact with
+	else if (inpt->pressing[ACCEPT] && !inpt->lock[ACCEPT]) {
+		npc_click = npcs->getNearestNPC(pc->stats.pos);
+		if (npc_click != -1) npc_id = npc_click;
+	}
 
 	// check distance to this npc
 	if (npc_id != -1) {
@@ -536,7 +563,9 @@ void GameStatePlay::checkNPCInteraction() {
 
 	// if close enough to the NPC, open the appropriate interaction screen
 	if (npc_click != -1 && interact_distance < max_interact_distance && pc->stats.alive && pc->stats.humanoid) {
-		inpt->lock[MAIN1] = true;
+		if (inpt->pressing[MAIN1]) inpt->lock[MAIN1] = true;
+		if (inpt->pressing[ACCEPT]) inpt->lock[ACCEPT] = true;
+
 		bool npc_have_dialog = !(npcs->npcs[npc_id]->chooseDialogNode() == NPC_NO_DIALOG_AVAIL);
 
 		if (npcs->npcs[npc_id]->vendor && !npc_have_dialog) {
@@ -559,21 +588,16 @@ void GameStatePlay::checkNPCInteraction() {
 			menu->vendor->setTab(0); // Show the NPC's inventory as opposed to the buyback tab
 			menu->vendor->npc = npcs->npcs[npc_id];
 			menu->vendor->setInventory();
-			menu->closeAll(false);
+			menu->closeAll();
 			menu->talker->visible = false;
 			menu->vendor->visible = true;
 			menu->inv->visible = true;
 
 			// if this vendor has voice-over, play it
-			if (!npcs->npcs[npc_id]->talker) {
-				if (!npcs->npcs[npc_id]->playSound(NPC_VOX_INTRO)) {
-					playSfx(menu->sfx_open);
-				}
-			}
-			else {
-				// unless the vendor has dialog; then they've already given their vox intro
-				playSfx(menu->sfx_open);
-			}
+			if (!npcs->npcs[npc_id]->talker)
+				npcs->npcs[npc_id]->playSound(NPC_VOX_INTRO);
+
+			snd->play(menu->vendor->sfx_open);
 
 			menu->talker->vendor_visible = false;
 			menu->vendor->talker_visible = false;
@@ -590,7 +614,7 @@ void GameStatePlay::checkNPCInteraction() {
 			}
 			menu->talker->npc = npcs->npcs[npc_id];
 			menu->talker->chooseDialogNode();
-			menu->closeAll(false);
+			menu->closeAll();
 			menu->talker->visible = true;
 			menu->vendor->visible = false;
 			menu->inv->visible = false;
@@ -658,6 +682,7 @@ void GameStatePlay::logic() {
 		checkEnemyFocus();
 		checkNPCInteraction();
 		map->checkHotspots();
+		map->checkNearestEvent(pc->stats.pos);
 		checkTitle();
 
 		pc->logic(menu->act->checkAction(inpt->mouse), restrictPowerUse());
@@ -679,7 +704,7 @@ void GameStatePlay::logic() {
 	// close menus when the player dies, but still allow them to be reopened
 	if (pc->close_menus) {
 		pc->close_menus = false;
-		menu->closeAll(false);
+		menu->closeAll();
 	}
 
 	// these actions occur whether the game is paused or not.
@@ -700,7 +725,7 @@ void GameStatePlay::logic() {
 	// change hero powers on transformation
 	if (pc->setPowers) {
 		pc->setPowers = false;
-		menu->closeAll(false);
+		menu->closeAll();
 		// save ActionBar state and lock slots from removing/replacing power
 		for (int i=0; i<12 ; i++) {
 			menu->act->actionbar[i] = menu->act->hotkeys[i];
@@ -730,6 +755,9 @@ void GameStatePlay::logic() {
 			menu->act->hotkeys[i] = menu->act->actionbar[i];
 			menu->act->locked[i] = false;
 		}
+
+		// also reapply equipment here, to account items that give bonuses to base stats
+		menu->inv->applyEquipment(menu->inv->inventory[EQUIPMENT].storage);
 	}
 
 	// when the hero (re)spawns, reapply equipment & passive effects

@@ -2,6 +2,7 @@
 Copyright © 2011-2012 Clint Bellanger
 Copyright © 2012 Igor Paliychuk
 Copyright © 2012 Stefan Beller
+Copyright © 2013 Henrik Andersson
 
 This file is part of FLARE.
 
@@ -59,7 +60,10 @@ void GameStatePlay::saveGame() {
 
 	stringstream ss;
 	ss.str("");
-	ss << PATH_USER << "save" << game_slot << ".txt";
+	ss << PATH_USER;
+	if (GAME_PREFIX.length() > 0)
+	  ss << GAME_PREFIX << "_";
+	ss << "save" << game_slot << ".txt";
 
 	outfile.open(ss.str().c_str(), ios::out);
 
@@ -110,8 +114,13 @@ void GameStatePlay::saveGame() {
 		outfile << "\n";
 
 		//shapeshifter value
-		if (pc->stats.transform_type == "untransform") outfile << "transformed=" << "\n";
-		else outfile << "transformed=" << pc->stats.transform_type << "\n";
+		if (pc->stats.transform_type == "untransform" || pc->stats.transform_duration != -1) outfile << "transformed=" << "\n";
+		else outfile << "transformed=" << pc->stats.transform_type << "," << pc->stats.manual_untransform << "\n";
+
+		// restore hero powers
+		if (pc->stats.transformed && pc->hero_stats) {
+			pc->stats.powers_list = pc->hero_stats->powers_list;
+		}
 
 		// enabled powers
 		outfile << "powers=";
@@ -120,6 +129,11 @@ void GameStatePlay::saveGame() {
 			else outfile << "," << pc->stats.powers_list[i];
 		}
 		outfile << "\n";
+
+		// restore transformed powers
+		if (pc->stats.transformed && pc->charmed_stats) {
+			pc->stats.powers_list = pc->charmed_stats->powers_list;
+		}
 
 		// campaign data
 		outfile << "campaign=";
@@ -134,7 +148,10 @@ void GameStatePlay::saveGame() {
 
 	// Save stash
 	ss.str("");
-	ss << PATH_USER << "stash.txt";
+	ss << PATH_USER;
+	if (GAME_PREFIX.length() > 0)
+	  ss << GAME_PREFIX << "_";
+	ss << "stash.txt";
 
 	outfile.open(ss.str().c_str(), ios::out);
 
@@ -169,7 +186,10 @@ void GameStatePlay::loadGame() {
 
 	stringstream ss;
 	ss.str("");
-	ss << PATH_USER << "save" << game_slot << ".txt";
+	ss << PATH_USER;
+	if (GAME_PREFIX.length() > 0)
+	  ss << GAME_PREFIX << "_";
+	ss << "save" << game_slot << ".txt";
 
 	if (infile.open(ss.str())) {
 		while (infile.next()) {
@@ -198,13 +218,6 @@ void GameStatePlay::loadGame() {
 			else if (infile.key == "hpmp") {
 				saved_hp = toInt(infile.nextValue());
 				saved_mp = toInt(infile.nextValue());
-				if (saved_hp < 0 || saved_hp > pc->stats.maxhp ||
-					saved_mp < 0 || saved_mp > pc->stats.maxmp) {
-
-					fprintf(stderr, "MP/HP value is out of bounds, setting to maximum\n");
-					saved_hp = pc->stats.maxhp;
-					saved_mp = pc->stats.maxmp;
-				}
 			}
 			else if (infile.key == "build") {
 				pc->stats.physical_character = toInt(infile.nextValue());
@@ -282,7 +295,10 @@ void GameStatePlay::loadGame() {
 			}
 			else if (infile.key == "transformed") {
 				pc->stats.transform_type = infile.nextValue();
-				if (pc->stats.transform_type != "") pc->stats.transform_duration = -1;
+				if (pc->stats.transform_type != "") {
+					pc->stats.transform_duration = -1;
+					pc->stats.manual_untransform = toInt(infile.nextValue());
+				}
 			}
 			else if (infile.key == "powers") {
 				string power;
@@ -300,29 +316,28 @@ void GameStatePlay::loadGame() {
 	menu->inv->inventory[EQUIPMENT].fillEquipmentSlots();
 
 	// Load stash
-	ss.str("");
-	ss << PATH_USER << "stash.txt";
-
-	if (infile.open(ss.str())) {
-		while (infile.next()) {
-			if (infile.key == "item") {
-				menu->stash->stock.setItems(infile.val);
-			}
-			else if (infile.key == "quantity") {
-				menu->stash->stock.setQuantities(infile.val);
-			}
-		}
-		infile.close();
-	}  else fprintf(stderr, "Unable to open %s!\n", ss.str().c_str());
+	loadStash();
 
 	// initialize vars
 	pc->stats.recalc();
 	menu->inv->applyEquipment(menu->inv->inventory[EQUIPMENT].storage);
+	// trigger passive effects here? Saved HP/MP values might depend on passively boosted HP/MP
+	// powers->activatePassives(pc->stats);
 	pc->stats.logic(); // run stat logic once to apply items bonuses
 	if (SAVE_HPMP) {
-		pc->stats.hp = saved_hp;
-		pc->stats.mp = saved_mp;
-	} else {
+		if (saved_hp < 0 || saved_hp > pc->stats.maxhp) {
+			fprintf(stderr, "HP value is out of bounds, setting to maximum\n");
+			pc->stats.hp = pc->stats.maxhp;
+		}
+		else pc->stats.hp = saved_hp;
+
+		if (saved_mp < 0 || saved_mp > pc->stats.maxmp) {
+			fprintf(stderr, "MP value is out of bounds, setting to maximum\n");
+			pc->stats.mp = pc->stats.maxmp;
+		}
+		else pc->stats.mp = saved_mp;
+	}
+	else {
 		pc->stats.hp = pc->stats.maxhp;
 		pc->stats.mp = pc->stats.maxmp;
 	}
@@ -381,7 +396,10 @@ void GameStatePlay::loadStash() {
 	FileParser infile;
 	stringstream ss;
 	ss.str("");
-	ss << PATH_USER << "stash.txt";
+	ss << PATH_USER;
+	if (GAME_PREFIX.length() > 0)
+	  ss << GAME_PREFIX << "_";
+	ss << "stash.txt";
 
 	if (infile.open(ss.str())) {
 		while (infile.next()) {

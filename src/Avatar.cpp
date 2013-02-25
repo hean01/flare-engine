@@ -2,6 +2,7 @@
 Copyright © 2011-2012 Clint Bellanger
 Copyright © 2012 Igor Paliychuk
 Copyright © 2012 Stefan Beller
+Copyright © 2013 Henrik Andersson
 
 This file is part of FLARE.
 
@@ -106,7 +107,7 @@ void Avatar::init() {
 	stats.recalc();
 
 	log_msg = "";
-	respawn = true;
+	respawn = false;
 
 	stats.cooldown_ticks = 0;
 
@@ -123,14 +124,14 @@ void Avatar::init() {
 	stats.hero_cooldown = vector<int>(POWER_COUNT, 0);
 
 	for (int i=0; i<4; i++) {
-		sound_steps[i] = NULL;
+		sound_steps[i] = 0;
 	}
 
-	sound_melee = NULL;
-	sound_hit = NULL;
-	sound_die = NULL;
-	sound_block = NULL;
-	level_up = NULL;
+	sound_melee = 0;
+	sound_hit = 0;
+	sound_die = 0;
+	sound_block = 0;
+	level_up = 0;
 }
 
 /**
@@ -202,17 +203,11 @@ void Avatar::loadGraphics(std::vector<Layer_gfx> _img_gfx) {
 }
 
 void Avatar::loadSounds() {
-	Mix_FreeChunk(sound_melee);
-	Mix_FreeChunk(sound_hit);
-	Mix_FreeChunk(sound_die);
-	Mix_FreeChunk(sound_block);
-	Mix_FreeChunk(level_up);
-
-	sound_melee = loadSfx("soundfx/melee_attack.ogg", "Avatar melee attack");
-	sound_hit = loadSfx("soundfx/" + stats.base + "_hit.ogg", "Avatar was hit");
-	sound_die = loadSfx("soundfx/" + stats.base + "_die.ogg", "Avatar death");
-	sound_block = loadSfx("soundfx/powers/block.ogg", "Avatar blocking");
-	level_up = loadSfx("soundfx/level_up.ogg", "Avatar leveling up");
+	sound_melee = snd->load("soundfx/melee_attack.ogg", "Avatar melee attack");
+	sound_hit = snd->load("soundfx/" + stats.base + "_hit.ogg", "Avatar was hit");
+	sound_die = snd->load("soundfx/" + stats.base + "_die.ogg", "Avatar death");
+	sound_block = snd->load("soundfx/powers/block.ogg", "Avatar blocking");
+	level_up = snd->load("soundfx/level_up.ogg", "Avatar leveling up");
 }
 
 /**
@@ -227,19 +222,23 @@ void Avatar::loadStepFX(const string& stepname) {
 
 	// clear previous sounds
 	for (int i=0; i<4; i++) {
-		Mix_FreeChunk(sound_steps[i]);
-		sound_steps[i] = NULL;
+		snd->unload(sound_steps[i]);
 	}
 
+	// A literal "NULL" means we don't want to load any new sounds
+	// This is used when transforming, since creatures don't have step sound effects
+	if (stepname == "NULL") return;
+
 	// load new sounds
-	sound_steps[0] = loadSfx("soundfx/steps/step_" + filename + "1.ogg", "Avatar loading foot steps");
-	sound_steps[1] = loadSfx("soundfx/steps/step_" + filename + "2.ogg", "Avatar loading foot steps");
-	sound_steps[2] = loadSfx("soundfx/steps/step_" + filename + "3.ogg", "Avatar loading foot steps");
-	sound_steps[3] = loadSfx("soundfx/steps/step_" + filename + "4.ogg", "Avatar loading foot steps");
+	sound_steps[0] = snd->load("soundfx/steps/step_" + filename + "1.ogg", "Avatar loading foot steps");
+	sound_steps[1] = snd->load("soundfx/steps/step_" + filename + "2.ogg", "Avatar loading foot steps");
+	sound_steps[2] = snd->load("soundfx/steps/step_" + filename + "3.ogg", "Avatar loading foot steps");
+	sound_steps[3] = snd->load("soundfx/steps/step_" + filename + "4.ogg", "Avatar loading foot steps");
 }
 
 
 bool Avatar::pressing_move() {
+	if (inpt->mouse_emulation) return false;
 	if (MOUSE_MOVE) {
 		return inpt->pressing[MAIN1];
 	} else {
@@ -249,6 +248,7 @@ bool Avatar::pressing_move() {
 
 void Avatar::set_direction() {
 	// handle direction changes
+	if (inpt->mouse_emulation) return;
 	if (MOUSE_MOVE) {
 		Point target = screen_to_map(inpt->mouse.x,  inpt->mouse.y, stats.pos.x, stats.pos.y);
 		// if no line of movement to target, use pathfinder
@@ -399,7 +399,7 @@ void Avatar::logic(int actionbar_power, bool restrictPowerUse) {
 		}
 		log_msg = ss.str();
 		stats.recalc();
-		playSfx(level_up);
+		snd->play(level_up);
 
 		// if the player managed to level up while dead (e.g. via a bleeding creature), restore to life
 		if (stats.cur_state == AVATAR_DEAD) {
@@ -486,7 +486,7 @@ void Avatar::logic(int actionbar_power, bool restrictPowerUse) {
 			stepfx = rand() % 4;
 
 			if (activeAnimation->isFirstFrame() || activeAnimation->isActiveFrame())
-				playSfx(sound_steps[stepfx]);
+				snd->play(sound_steps[stepfx]);
 
 			// allowed to move or use powers?
 			if (MOUSE_MOVE) {
@@ -521,7 +521,7 @@ void Avatar::logic(int actionbar_power, bool restrictPowerUse) {
 			if (MOUSE_MOVE) lockSwing = true;
 
 			if (activeAnimation->isFirstFrame())
-				playSfx(sound_melee);
+				snd->play(sound_melee);
 
 			// do power
 			if (activeAnimation->isActiveFrame()) {
@@ -613,7 +613,7 @@ void Avatar::logic(int actionbar_power, bool restrictPowerUse) {
 				// close menus in GameStatePlay
 				close_menus = true;
 
-				playSfx(sound_die);
+				snd->play(sound_die);
 
 				if (stats.permadeath) {
 					log_msg = msg->get("You are defeated. Game over! Press Enter to exit to Title.");
@@ -732,7 +732,7 @@ bool Avatar::takeHit(const Hazard &h) {
 				} else {
 					if (MAX_RESIST < 100) dmg = 1;
 				}
-				playSfx(sound_block);
+				snd->play(sound_block);
 				activeAnimation->reset(); // shield stutter
 				for (unsigned i=0; i < animsets.size(); i++)
 					if (anims[i])
@@ -777,7 +777,7 @@ bool Avatar::takeHit(const Hazard &h) {
 			stats.cur_state = AVATAR_DEAD;
 		}
 		else if (prev_hp > stats.hp) { // only interrupt if damage was taken
-			playSfx(sound_hit);
+			snd->play(sound_hit);
 			if (!percentChance(stats.poise)) {
 				stats.cur_state = AVATAR_HIT;
 			}
@@ -810,6 +810,8 @@ void Avatar::transform() {
 	stats.flying = charmed_stats->flying;
 	stats.humanoid = charmed_stats->humanoid;
 	stats.animations = charmed_stats->animations;
+	stats.powers_list = charmed_stats->powers_list;
+	stats.effects.clearEffects();
 
 	string animationname = "animations/enemies/"+charmed_stats->animations + ".txt";
 	anim->decreaseCount("animations/hero.txt");
@@ -821,17 +823,17 @@ void Avatar::transform() {
 
 	// damage
 	clampFloor(stats.dmg_melee_min, charmed_stats->dmg_melee_min);
-	clampCeil(stats.dmg_melee_max, charmed_stats->dmg_melee_max);
+	clampFloor(stats.dmg_melee_max, charmed_stats->dmg_melee_max);
 
 	clampFloor(stats.dmg_ment_min, charmed_stats->dmg_ment_min);
-	clampCeil(stats.dmg_ment_max, charmed_stats->dmg_ment_max);
+	clampFloor(stats.dmg_ment_max, charmed_stats->dmg_ment_max);
 
 	clampFloor(stats.dmg_ranged_min, charmed_stats->dmg_ranged_min);
-	clampCeil(stats.dmg_ranged_max, charmed_stats->dmg_ranged_max);
+	clampFloor(stats.dmg_ranged_max, charmed_stats->dmg_ranged_max);
 
 	// dexterity
 	clampFloor(stats.absorb_min, charmed_stats->absorb_min);
-	clampCeil(stats.absorb_max, charmed_stats->absorb_max);
+	clampFloor(stats.absorb_max, charmed_stats->absorb_max);
 
 	clampFloor(stats.avoidance, charmed_stats->avoidance);
 
@@ -854,6 +856,7 @@ void Avatar::untransform() {
 	transform_triggered = false;
 	stats.transform_type = "";
 	revertPowers = true;
+	stats.effects.clearEffects();
 
 	// revert some hero stats to last saved
 	stats.speed = hero_stats->speed;
@@ -861,6 +864,8 @@ void Avatar::untransform() {
 	stats.flying = hero_stats->flying;
 	stats.humanoid = hero_stats->humanoid;
 	stats.animations = hero_stats->animations;
+	stats.effects = hero_stats->effects;
+	stats.powers_list = hero_stats->powers_list;
 
 	anim->increaseCount("animations/hero.txt");
 	anim->decreaseCount("animations/enemies/"+charmed_stats->animations + ".txt");
@@ -889,6 +894,8 @@ void Avatar::untransform() {
 	for (unsigned int i=0; i<stats.vulnerable.size(); i++) {
 		stats.vulnerable[i] = hero_stats->vulnerable[i];
 	}
+
+	loadStepFX(stats.sfx_step);
 
 	delete charmed_stats;
 	delete hero_stats;
@@ -951,7 +958,12 @@ void Avatar::addRenders(vector<Renderable> &r) {
 
 Avatar::~Avatar() {
 
-	anim->decreaseCount("animations/hero.txt");
+	if (stats.transformed && charmed_stats && charmed_stats->animations != "") {
+		anim->decreaseCount("animations/enemies/"+charmed_stats->animations + ".txt");
+	} else {
+		anim->decreaseCount("animations/hero.txt");
+	}
+
 	for (unsigned int i=0; i<animsets.size(); i++) {
 		if (animsets[i])
 			anim->decreaseCount(animsets[i]->getName());
@@ -962,15 +974,15 @@ Avatar::~Avatar() {
 	delete charmed_stats;
 	delete hero_stats;
 
-	Mix_FreeChunk(sound_melee);
-	Mix_FreeChunk(sound_hit);
-	Mix_FreeChunk(sound_die);
-	Mix_FreeChunk(sound_block);
-	Mix_FreeChunk(sound_steps[0]);
-	Mix_FreeChunk(sound_steps[1]);
-	Mix_FreeChunk(sound_steps[2]);
-	Mix_FreeChunk(sound_steps[3]);
-	Mix_FreeChunk(level_up);
+	snd->unload(sound_melee);
+	snd->unload(sound_hit);
+	snd->unload(sound_die);
+	snd->unload(sound_block);
+
+	for (int i = 0;i < 4; i++)
+	        snd->unload(sound_steps[i]);
+
+	snd->unload(level_up);
 
 	delete haz;
 }
